@@ -8,7 +8,7 @@ from mcp.server.fastmcp import FastMCP
 
 load_dotenv()
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent
 
 
 def _dir(var: str, default: str) -> Path:
@@ -50,20 +50,20 @@ def _unique(dest: Path) -> Path:
 
 @mcp.tool()
 def listar_temas() -> list[str]:
-    """Devuelve la lista de temas prefijados en los que se puede clasificar."""
+    """Devuelve los únicos temas válidos para clasificar un archivo. Úsala antes de mover_a_tema."""
     return TEMAS
 
 
 @mcp.tool()
 def listar_directorio_base() -> list[str]:
-    """Lista los archivos disponibles en el directorio base (p. ej. descargas)."""
+    """Lista los archivos del directorio base (descargas), aún no subidos. No muestra recepcion."""
     BASE_DIR.mkdir(parents=True, exist_ok=True)
     return sorted(p.name for p in BASE_DIR.iterdir() if p.is_file() and not p.name.startswith("."))
 
 
 @mcp.tool()
 def subir_archivo(nombre: str) -> str:
-    """Copia un archivo del directorio base a la carpeta 'recepcion' (simula un upload)."""
+    """Sube un archivo que ya existe en el directorio base copiándolo a 'recepcion'. Solo copia, no clasifica. nombre: nombre exacto con extensión."""
     origen = _safe(BASE_DIR, nombre)
     if not origen.is_file():
         return f"ERROR: '{nombre}' no existe en el directorio base."
@@ -74,8 +74,8 @@ def subir_archivo(nombre: str) -> str:
 
 
 @mcp.tool()
-def guardar_texto(nombre: str, contenido: str) -> str:
-    """Guarda un texto como archivo .txt en la carpeta 'recepcion'."""
+def guardar_texto(contenido: str, nombre: str = "texto") -> str:
+    """Guarda un texto escrito por el usuario como nuevo archivo .txt en 'recepcion'. Solo guarda, no clasifica. contenido: el texto. nombre: opcional, no se lo pidas al usuario."""
     if not nombre.endswith(".txt"):
         nombre += ".txt"
     destino = _unique(_safe(RECEPCION_DIR, nombre))
@@ -86,14 +86,14 @@ def guardar_texto(nombre: str, contenido: str) -> str:
 
 @mcp.tool()
 def listar_pendientes() -> list[str]:
-    """Lista los archivos de 'recepcion' pendientes de clasificar."""
+    """Lista los archivos de 'recepcion' que aún NO están clasificados (no incluye los ya movidos a un tema)."""
     RECEPCION_DIR.mkdir(parents=True, exist_ok=True)
     return sorted(p.name for p in RECEPCION_DIR.iterdir() if p.is_file() and not p.name.startswith("."))
 
 
 @mcp.tool()
 def leer_archivo(nombre: str) -> str:
-    """Devuelve el contenido de un archivo pendiente en 'recepcion'."""
+    """Devuelve el contenido de un archivo PENDIENTE (de listar_pendientes), para decidir su tema. No sirve para archivos ya clasificados."""
     ruta = _safe(RECEPCION_DIR, nombre)
     if not ruta.is_file():
         return f"ERROR: '{nombre}' no existe en recepcion."
@@ -102,7 +102,7 @@ def leer_archivo(nombre: str) -> str:
 
 @mcp.tool()
 def mover_a_tema(nombre: str, tema: str) -> str:
-    """Mueve un archivo pendiente de 'recepcion' a la subcarpeta del tema (se crea si no existe)."""
+    """Clasifica un archivo PENDIENTE moviéndolo a la carpeta de su tema (se crea si no existe). tema: uno de listar_temas."""
     tema = tema.strip().lower()
     if tema not in TEMAS:
         return f"ERROR: tema '{tema}' no válido. Temas: {', '.join(TEMAS)}."
@@ -118,7 +118,7 @@ def mover_a_tema(nombre: str, tema: str) -> str:
 
 @mcp.tool()
 def listar_por_tema(tema: str) -> list[str]:
-    """Lista los archivos clasificados bajo un tema."""
+    """Lista los archivos YA clasificados en un tema. No muestra los pendientes. tema: uno de listar_temas."""
     tema = tema.strip().lower()
     carpeta = RECEPCION_DIR / tema
     if tema not in TEMAS or not carpeta.is_dir():

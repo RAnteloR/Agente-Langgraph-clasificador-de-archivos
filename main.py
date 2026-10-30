@@ -1,7 +1,7 @@
 """Cliente CLI: agente ReAct (LangGraph) que usa las tools del servidor MCP.
 
-Uso: uv run python agent/main.py [--provider ollama|gemini] [--model NOMBRE] [--key N]
-El servidor MCP debe estar arrancado: uv run python mcp_server/server.py
+Uso: uv run python main.py [--modelo proveedor/modelo] [--key N]
+El servidor MCP debe estar arrancado: uv run python server.py
 """
 import argparse
 import asyncio
@@ -20,21 +20,22 @@ load_dotenv()
 MCP_URL = f"http://{os.getenv('MCP_HOST', '127.0.0.1')}:{os.getenv('MCP_PORT', '8000')}/mcp"
 
 SYSTEM_PROMPT = """Eres un asistente que gestiona archivos de texto con herramientas MCP. Responde en español.
-- Subir un archivo: usa subir_archivo con el nombre (listar_directorio_base muestra los disponibles).
-- Guardar un texto del usuario como archivo: usa guardar_texto.
-- Clasificar: usa listar_temas y listar_pendientes; para CADA archivo pendiente usa leer_archivo,
-  elige según su contenido UN tema de listar_temas (si no encaja, 'otros') y llama a mover_a_tema.
-- Listar los archivos de un tema: usa listar_por_tema.
+Flujo: los archivos se suben o guardan en 'recepcion' (pendientes) y luego se clasifican por tema.
+- Ver qué hay para subir: listar_directorio_base.
+- Subir un archivo existente del directorio base: subir_archivo. NO lo clasifiques salvo que te lo pidan.
+- Guardar un texto que escribe el usuario: guardar_texto. NO lo clasifiques salvo que te lo pidan.
+- Clasificar: listar_pendientes y listar_temas; para CADA pendiente usa leer_archivo, elige UN tema de
+  listar_temas según su contenido ('otros' si no encaja) y llama a mover_a_tema.
+- Ver los archivos ya clasificados de un tema: listar_por_tema.
 No inventes nombres de archivo ni temas."""
 
 
 async def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--provider")
-    ap.add_argument("--model")
+    ap.add_argument("--modelo", help="p. ej. ollama/llama3.1:8b-instruct-q4_K_M o gemini/gemini-2.5-flash")
     ap.add_argument("--key", type=int, default=0, help="índice de la API key de Gemini")
     a = ap.parse_args()
-    llm = get_llm(a.provider, a.model, key_index=a.key)
+    llm = get_llm(a.modelo, key_index=a.key)
 
     async with streamablehttp_client(MCP_URL) as (read, write, _):
         async with ClientSession(read, write) as session:
@@ -49,11 +50,15 @@ async def main():
                 if pregunta.lower() in ("salir", "exit", "quit"):
                     print("Chat terminado")
                     break
-                async for s in app.astream({"messages": [("user", pregunta)]}, config, stream_mode="values"):
-                    msg = s["messages"][-1]
-                    for tc in getattr(msg, "tool_calls", None) or []:
-                        print(f"   [MCP: {tc['name']}({tc['args']})]")
-                print(f"\nRESPUESTA FINAL:\n{msg.content}\n")
+                try:
+                    async for s in app.astream({"messages": [("user", pregunta)]}, config, stream_mode="values"):
+                        msg = s["messages"][-1]
+                        for tc in getattr(msg, "tool_calls", None) or []:
+                            print(f"   [MCP: {tc['name']}({tc['args']})]")
+                except Exception as e:
+                    print(f"\nERROR del modelo: {str(e)[:200]}\n(Si es una cuota agotada, prueba otra clave con --key N u otro modelo.)\n")
+                    continue
+                print(f"\nRESPUESTA FINAL:\n{msg.text}\n")
 
 
 if __name__ == "__main__":
